@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using static Dispatcher.ActorBase;
@@ -23,22 +24,18 @@ namespace Dispatcher
             public void DoAction()
             {
                 _action?.Invoke();
-                Queue<Action> queue;
+                ConcurrentQueue<Action> queue;
 
-                lock (_dispatcher._actorsActions[_actorName])
+                queue = _dispatcher._actorsActions[_actorName];
+
+                while (queue.TryDequeue(out Action pending))
                 {
-                    queue = _dispatcher._actorsActions[_actorName];
-
-                    foreach (var pending in queue)
-                        pending?.Invoke();
-
-                    queue.Clear();
+                    pending?.Invoke();
                 }
 
-                lock (_dispatcher._actorRunningState)
-                {
-                    _dispatcher._actorRunningState[_actorName] = false;
-                }
+                queue.Clear();
+
+                _dispatcher._actorRunningState[_actorName] = false;
             }
 
             public void DoPendingAction()
@@ -48,15 +45,15 @@ namespace Dispatcher
         }
 
         Dictionary<string, ActorBase> _actors;
-        Dictionary<string, Queue<Action>> _actorsActions;
-        Dictionary<string, bool> _actorRunningState;
+        ConcurrentDictionary<string, ConcurrentQueue<Action>> _actorsActions;
+        ConcurrentDictionary<string, bool> _actorRunningState;
         List<Thread> _threads = new List<Thread>();
 
         public Dispatcher()
         {
             _actors = new Dictionary<string, ActorBase>();
-            _actorsActions = new Dictionary<string, Queue<Action>>();
-            _actorRunningState = new Dictionary<string, bool>();
+            _actorsActions = new ConcurrentDictionary<string, ConcurrentQueue<Action>>();
+            _actorRunningState = new ConcurrentDictionary<string, bool>();
         }
 
         public string CreateActor(string[] parameters)
@@ -78,16 +75,8 @@ namespace Dispatcher
             }
 
             _actors.Add(name, actor);
-
-            lock (_actorsActions)
-            { 
-                _actorsActions.Add(name, new Queue<Action>());
-            }
-
-            lock (_actorRunningState)
-            { 
-                _actorRunningState.Add(name, false);
-            }
+            _actorsActions.TryAdd(name, new ConcurrentQueue<Action>());
+            _actorRunningState.TryAdd(name, false);
 
             Console.WriteLine($"actor created with name {name}");
             return name;
@@ -96,11 +85,14 @@ namespace Dispatcher
         public void InvokeAction(string actorName, string operationType) 
         {
             ActionWrapper action;
+            ActorBase actor;
 
-            var actor = _actors[actorName];
-
-            if (actor == null)
-            { 
+            try
+            {
+                actor = _actors[actorName];
+            }
+            catch 
+            {
                 Console.WriteLine("Invalid Actor Name");
                 return;
             }
@@ -119,24 +111,15 @@ namespace Dispatcher
 
             var actorState = false;
 
-            lock (_actorRunningState)
-            {
-                actorState = _actorRunningState[actorName];
-            }
+            actorState = _actorRunningState[actorName];
 
             if (actorState) //running
             {
-                lock (_actorsActions[actorName])
-                {
-                    _actorsActions[actorName].Enqueue(action.DoPendingAction);
-                }
+                _actorsActions[actorName].Enqueue(action.DoPendingAction);
             }
             else 
             {
-                lock (_actorRunningState)
-                {
-                    _actorRunningState[actorName] = true;
-                }
+                _actorRunningState[actorName] = true;
                 var thread = new Thread(() => action.DoAction());
                 thread.Start();
                 _threads.Add(thread);
