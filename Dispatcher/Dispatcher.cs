@@ -7,28 +7,27 @@ namespace Dispatcher
 {
     public class Dispatcher
     {
-
-        public class ActionWrapper 
+        private class ActionWrapper 
         {
-            private readonly Dispatcher dispatcher;
-            private readonly string actorName;
-            private readonly Action action;
+            private readonly Dispatcher _dispatcher;
+            private readonly string _actorName;
+            private readonly Action _action;
 
             public ActionWrapper(Dispatcher dispatcher, string actorName, Action action)
             {
-                this.dispatcher = dispatcher;
-                this.actorName = actorName;
-                this.action = action;
+                _dispatcher = dispatcher;
+                _actorName = actorName;
+                _action = action;
             }
 
             public void DoAction()
             {
-                action?.Invoke();
+                _action?.Invoke();
                 Queue<Action> queue;
 
-                lock (dispatcher._actorsActions[actorName])
+                lock (_dispatcher._actorsActions[_actorName])
                 {
-                    queue = dispatcher._actorsActions[actorName];
+                    queue = _dispatcher._actorsActions[_actorName];
 
                     foreach (var pending in queue)
                         pending?.Invoke();
@@ -36,15 +35,15 @@ namespace Dispatcher
                     queue.Clear();
                 }
 
-                lock (dispatcher._actorRunningState)
+                lock (_dispatcher._actorRunningState)
                 {
-                    dispatcher._actorRunningState[actorName] = false;
+                    _dispatcher._actorRunningState[_actorName] = false;
                 }
             }
 
             public void DoPendingAction()
             {
-                action?.Invoke();
+                _action?.Invoke();
             }
         }
 
