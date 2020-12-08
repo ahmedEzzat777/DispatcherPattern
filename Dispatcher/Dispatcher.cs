@@ -142,6 +142,8 @@ namespace Dispatcher
                 thread.Start();
                 _threads.Add(thread);
             }
+
+            Console.WriteLine($"Added {(OperationType)int.Parse(operationType)} to actor {actorName}");
         }
 
         public void Wait() => _threads.ForEach(a => a.Join());
